@@ -1,0 +1,9 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <Style src="project://database/Assets/UITK/Benchmark.uss?fileID=7433441132597879392&amp;guid=b01ad8ad9e2854f009d5e1b9bf1e3d7c&amp;type=3#Benchmark" />
+    <ui:VisualElement name="root" class="root">
+        <ui:Label text="Asset Bundle Benchmark" name="title" class="title-label" />
+        <ui:Label text="Awake Counter: 0" name="awake-counter" class="awake-counter-label" />
+        <ui:Label text="Press button to start benchmark" name="benchmark-result" class="result-label" />
+        <ui:Button text="Start Benchmark" name="start-button" class="start-button" />
+    </ui:VisualElement>
+</ui:UXML>
