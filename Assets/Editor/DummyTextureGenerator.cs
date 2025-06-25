@@ -5,8 +5,8 @@ using System.IO;
 public class DummyTextureGenerator
 {
     const int TextureCount = 1000;
-    const int TextureWidth = 1024;
-    const int TextureHeight = 1024;
+    const int TextureWidth = 256;
+    const int TextureHeight = 256;
     const string OutputPath = "Assets/DummyAssets/Textures";
 
     [MenuItem("Tools/Generate Dummy Textures")]
