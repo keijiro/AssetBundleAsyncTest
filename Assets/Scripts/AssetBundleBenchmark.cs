@@ -13,9 +13,17 @@ public class AssetBundleBenchmark : MonoBehaviour
     Label awakeCounterLabel;
     Label benchmarkResultLabel;
     Button startBenchmarkButton;
+    DropdownField priorityDropdown;
+    DropdownField compressionDropdown;
     
     AssetBundle loadedBundle;
     bool isBenchmarkRunning;
+    int[] awakeCountPerFrame = new int[1000];
+    int frameCount;
+    float loadFromFileTime;
+    float totalLoadTime;
+    long currentBundleSize;
+    long noneCompressionSize;
 
     void Start()
     {
@@ -34,9 +42,23 @@ public class AssetBundleBenchmark : MonoBehaviour
         awakeCounterLabel = root.Q<Label>("awake-counter");
         benchmarkResultLabel = root.Q<Label>("benchmark-result");
         startBenchmarkButton = root.Q<Button>("start-button");
+        priorityDropdown = root.Q<DropdownField>("priority-dropdown");
+        compressionDropdown = root.Q<DropdownField>("compression-dropdown");
 
         if (startBenchmarkButton != null)
             startBenchmarkButton.clicked += StartBenchmark;
+            
+        if (priorityDropdown != null)
+        {
+            priorityDropdown.choices = new List<string> { "Low", "BelowNormal", "Normal", "High" };
+            priorityDropdown.value = "Low";
+        }
+        
+        if (compressionDropdown != null)
+        {
+            compressionDropdown.choices = new List<string> { "None", "LZMA", "LZ4" };
+            compressionDropdown.value = "LZMA";
+        }
     }
 
     void Update()
@@ -65,14 +87,41 @@ public class AssetBundleBenchmark : MonoBehaviour
     IEnumerator BenchmarkCoroutine()
     {
         isBenchmarkRunning = true;
+        frameCount = 0;
         
-        Application.backgroundLoadingPriority = ThreadPriority.Low;
+        var selectedPriority = priorityDropdown?.value ?? "Low";
+        Application.backgroundLoadingPriority = selectedPriority switch
+        {
+            "Low" => ThreadPriority.Low,
+            "BelowNormal" => ThreadPriority.BelowNormal,
+            "Normal" => ThreadPriority.Normal,
+            "High" => ThreadPriority.High,
+            _ => ThreadPriority.Low
+        };
         
-        var stopwatch = Stopwatch.StartNew();
+        var totalStopwatch = Stopwatch.StartNew();
+        var loadFromFileStopwatch = Stopwatch.StartNew();
 
-        var bundlePath = Path.Combine(Application.streamingAssetsPath, BundleName);
+        var selectedCompression = compressionDropdown?.value ?? "LZMA";
+        var compressionSuffix = selectedCompression.ToLower() switch
+        {
+            "none" => "none",
+            "lzma" => "lzma",
+            "lz4" => "lz4",
+            _ => "lzma"
+        };
+        var bundlePath = Path.Combine(Application.streamingAssetsPath, $"{BundleName}-{compressionSuffix}");
+        
+        // Get file sizes for compression ratio calculation
+        currentBundleSize = GetFileSize(bundlePath);
+        var noneCompressionPath = Path.Combine(Application.streamingAssetsPath, $"{BundleName}-none");
+        noneCompressionSize = GetFileSize(noneCompressionPath);
+        
         var bundleRequest = AssetBundle.LoadFromFileAsync(bundlePath);
         yield return bundleRequest;
+        
+        loadFromFileStopwatch.Stop();
+        loadFromFileTime = loadFromFileStopwatch.ElapsedMilliseconds;
 
         if (bundleRequest.assetBundle == null)
         {
@@ -103,7 +152,6 @@ public class AssetBundleBenchmark : MonoBehaviour
         }
 
         var allCompleted = false;
-        var frameCount = 0;
         while (!allCompleted)
         {
             allCompleted = true;
@@ -116,20 +164,52 @@ public class AssetBundleBenchmark : MonoBehaviour
                 }
             }
             
-            UnityEngine.Debug.Log($"Frame {frameCount++}: Awake Counter = {DummyTextureGroup.AwakeCounter}");
+            if (frameCount < awakeCountPerFrame.Length)
+                awakeCountPerFrame[frameCount] = DummyTextureGroup.AwakeCounter;
+                
+            UnityEngine.Debug.Log($"Frame {frameCount}: Awake Counter = {DummyTextureGroup.AwakeCounter}");
+            frameCount++;
             
             yield return null;
         }
 
-        stopwatch.Stop();
+        totalStopwatch.Stop();
+        totalLoadTime = totalStopwatch.ElapsedMilliseconds;
 
-        var elapsedMs = stopwatch.ElapsedMilliseconds;
+        var maxAwakePerFrame = 0;
+        for (var i = 0; i < frameCount && i < awakeCountPerFrame.Length; i++)
+        {
+            var awakeThisFrame = i == 0 ? awakeCountPerFrame[i] : awakeCountPerFrame[i] - awakeCountPerFrame[i-1];
+            if (awakeThisFrame > maxAwakePerFrame)
+                maxAwakePerFrame = awakeThisFrame;
+        }
+
+        var fileSizeKB = currentBundleSize / 1024f;
+        var compressionRatio = noneCompressionSize > 0 ? (float)currentBundleSize / noneCompressionSize : 1.0f;
+        var compressionPercent = (1.0f - compressionRatio) * 100f;
+
         if (benchmarkResultLabel != null)
-            benchmarkResultLabel.text = $"Loaded {groupAssetNames.Count} ScriptableObjects in {elapsedMs}ms";
+        {
+            benchmarkResultLabel.text = $"Compression: {selectedCompression}\n" +
+                                      $"File Size: {fileSizeKB:F1} KB\n" +
+                                      $"Compression Ratio: {compressionRatio:F2} ({compressionPercent:F1}% reduction)\n" +
+                                      $"LoadFromFileAsync: {loadFromFileTime}ms\n" +
+                                      $"Total Load Time: {totalLoadTime}ms\n" +
+                                      $"Loaded {groupAssetNames.Count} ScriptableObjects\n" +
+                                      $"Max Awake/Frame: {maxAwakePerFrame}\n" +
+                                      $"Total Frames: {frameCount}";
+        }
         
-        UnityEngine.Debug.Log($"Benchmark completed: {elapsedMs}ms, Awake Counter: {DummyTextureGroup.AwakeCounter}");
+        UnityEngine.Debug.Log($"Benchmark completed - Compression: {selectedCompression}, File Size: {fileSizeKB:F1}KB, Ratio: {compressionRatio:F2}, LoadFromFile: {loadFromFileTime}ms, Total: {totalLoadTime}ms, Max Awake/Frame: {maxAwakePerFrame}, Awake Counter: {DummyTextureGroup.AwakeCounter}");
 
         isBenchmarkRunning = false;
+    }
+
+    long GetFileSize(string filePath)
+    {
+        if (File.Exists(filePath))
+            return new FileInfo(filePath).Length;
+        return 0;
     }
 
     void OnDestroy()

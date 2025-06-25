@@ -27,6 +27,20 @@
     margin-bottom: 30px;
 }
 
+.setting-label {
+    font-size: 18px;
+    color: white;
+    margin-bottom: 10px;
+}
+
+.priority-dropdown {
+    margin-bottom: 20px;
+}
+
+.compression-dropdown {
+    margin-bottom: 20px;
+}
+
 .start-button {
     font-size: 18px;
     width: 200px;

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.IO;
+using System.Collections.Generic;
 
 public class AssetBundleBuilder
 {
@@ -20,7 +21,7 @@ public class AssetBundleBuilder
         }
 
         AssignAssetBundleNames();
-        BuildBundles();
+        BuildBundlesWithAllCompressions();
         CopyToStreamingAssets();
         
         Debug.Log("Asset bundle build completed successfully");
@@ -50,20 +51,33 @@ public class AssetBundleBuilder
         Debug.Log($"Assigned {textureGuids.Length} textures and {groupGuids.Length} groups to bundle: {BundleName}");
     }
 
-    static void BuildBundles()
+    static void BuildBundlesWithAllCompressions()
     {
         if (Directory.Exists(TempBuildPath))
             Directory.Delete(TempBuildPath, true);
         
         Directory.CreateDirectory(TempBuildPath);
 
-        BuildPipeline.BuildAssetBundles(
-            TempBuildPath,
-            BuildAssetBundleOptions.None,
-            BuildTarget.StandaloneOSX
-        );
-        
-        Debug.Log($"Asset bundles built to: {TempBuildPath}");
+        var compressionOptions = new Dictionary<string, BuildAssetBundleOptions>
+        {
+            { "none", BuildAssetBundleOptions.UncompressedAssetBundle },
+            { "lzma", BuildAssetBundleOptions.None },
+            { "lz4", BuildAssetBundleOptions.ChunkBasedCompression }
+        };
+
+        foreach (var compression in compressionOptions)
+        {
+            var compressionPath = Path.Combine(TempBuildPath, compression.Key);
+            Directory.CreateDirectory(compressionPath);
+            
+            BuildPipeline.BuildAssetBundles(
+                compressionPath,
+                compression.Value,
+                BuildTarget.StandaloneOSX
+            );
+            
+            Debug.Log($"Asset bundles built with {compression.Key} compression to: {compressionPath}");
+        }
     }
 
     static void CopyToStreamingAssets()
@@ -71,20 +85,25 @@ public class AssetBundleBuilder
         if (!Directory.Exists(StreamingAssetsPath))
             Directory.CreateDirectory(StreamingAssetsPath);
 
-        var sourcePath = Path.Combine(TempBuildPath, BundleName);
-        var destPath = Path.Combine(StreamingAssetsPath, BundleName);
+        var compressionTypes = new[] { "none", "lzma", "lz4" };
+        
+        foreach (var compression in compressionTypes)
+        {
+            var sourcePath = Path.Combine(TempBuildPath, compression, BundleName);
+            var destPath = Path.Combine(StreamingAssetsPath, $"{BundleName}-{compression}");
 
-        if (File.Exists(sourcePath))
-        {
-            if (File.Exists(destPath))
-                File.Delete(destPath);
-            
-            File.Copy(sourcePath, destPath);
-            Debug.Log($"Asset bundle copied to: {destPath}");
-        }
-        else
-        {
-            Debug.LogError($"Built asset bundle not found: {sourcePath}");
+            if (File.Exists(sourcePath))
+            {
+                if (File.Exists(destPath))
+                    File.Delete(destPath);
+                
+                File.Copy(sourcePath, destPath);
+                Debug.Log($"Asset bundle ({compression}) copied to: {destPath}");
+            }
+            else
+            {
+                Debug.LogError($"Built asset bundle not found: {sourcePath}");
+            }
         }
 
         AssetDatabase.Refresh();
